@@ -1,6 +1,6 @@
 # ============================================================
-# PPC TOOL LAR – ENTERPRISE MODE (STABLE VERSION)
-# SP Search Term + Purchased Product Report
+# PPC TOOL LAR – ENTERPRISE AGENCY VERSION
+# Sponsored Products | INR | Monthly Comparison | Client Mode
 # ============================================================
 
 import streamlit as st
@@ -8,10 +8,10 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(page_title="PPC TOOL LAR", layout="wide")
-st.title("🚀 PPC TOOL LAR – Enterprise Mode")
+st.title("🚀 PPC TOOL LAR – Enterprise Agency Dashboard")
 
 # ============================================================
-# HELPER
+# HELPER FUNCTIONS
 # ============================================================
 
 def safe_div(a, b):
@@ -19,31 +19,42 @@ def safe_div(a, b):
         return np.where(b != 0, a / b, 0)
     return a / b if b != 0 else 0
 
+def change_indicator(current, previous):
+    if previous == 0:
+        return "—"
+    change = (current - previous) / previous * 100
+    if change > 0:
+        return f"🟢 {change:.2f}%"
+    elif change < 0:
+        return f"🔴 {change:.2f}%"
+    else:
+        return "0%"
+
 # ============================================================
-# FILE UPLOADS
+# FILE UPLOAD
 # ============================================================
 
 st.sidebar.header("Upload Reports")
 
-search_file = st.sidebar.file_uploader(
-    "Upload Search Term Report",
+current_file = st.sidebar.file_uploader(
+    "Upload Current Month Search Term Report",
     type=["csv","xlsx"]
 )
 
-purchased_file = st.sidebar.file_uploader(
-    "Upload Purchased Product Report (For SKU)",
+previous_file = st.sidebar.file_uploader(
+    "Upload Previous Month Search Term Report",
     type=["csv","xlsx"]
 )
 
-if search_file:
+# ============================================================
+# MAIN ENGINE
+# ============================================================
 
-    # ============================================================
-    # LOAD SEARCH TERM REPORT
-    # ============================================================
+if current_file:
 
-    df = pd.read_excel(search_file) if search_file.name.endswith("xlsx") else pd.read_csv(search_file)
+    df = pd.read_excel(current_file) if current_file.name.endswith("xlsx") else pd.read_csv(current_file)
 
-    # Exact mapping based on your real file
+    # Exact mapping (based on your real report)
     df["search_term"] = df["Customer Search Term"]
     df["campaign"] = df["Campaign Name"]
     df["ad_group"] = df["Ad Group Name"]
@@ -55,9 +66,7 @@ if search_file:
 
     df.fillna(0, inplace=True)
 
-    # ============================================================
-    # METRICS
-    # ============================================================
+    # ================= METRICS =================
 
     df["cpc"] = safe_div(df["spend"], df["clicks"])
     df["ctr"] = safe_div(df["clicks"], df["impressions"]) * 100
@@ -71,9 +80,7 @@ if search_file:
         0
     )
 
-    # ============================================================
-    # PROFIT SETTINGS
-    # ============================================================
+    # ================= PROFIT SETTINGS =================
 
     st.sidebar.header("Profit Settings")
     margin = st.sidebar.slider("Margin %", 10, 80, 40)
@@ -85,9 +92,7 @@ if search_file:
     break_even_roas = 1 / (margin / 100)
     tacos = safe_div(df["spend"].sum(), total_revenue) * 100
 
-    # ============================================================
-    # UIS SCORE
-    # ============================================================
+    # ================= UIS =================
 
     avg_roas = df["roas"].mean()
     avg_cvr = df["cvr"].mean()
@@ -102,23 +107,23 @@ if search_file:
                         np.where(df["uis"] > 40, df["cpc"],
                         df["cpc"] * 0.85)))
 
-    df["cluster"] = df["search_term"].astype(str).apply(lambda x: " ".join(x.split()[:2]))
-
     # ============================================================
-    # TABS
+    # TABS (STRUCTURE SAME)
     # ============================================================
 
-    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs([
         "Overview",
         "Keyword Intelligence",
         "Negative Engine",
         "Campaign Builder",
         "Portfolio",
-        "SKU Intelligence"
+        "Product Intelligence",
+        "Client Report",
+        "Monthly Comparison"
     ])
 
     # ============================================================
-    # OVERVIEW
+    # OVERVIEW (UPGRADED)
     # ============================================================
 
     with tab1:
@@ -129,59 +134,32 @@ if search_file:
         total_roas = safe_div(total_sales, total_spend)
         total_acos = safe_div(total_spend, total_sales) * 100
         total_waste = float(df["hard_waste"].sum())
+        waste_percent = safe_div(total_waste, total_spend) * 100
 
-        overview = pd.DataFrame({
-            "Metric":[
-                "Spend ₹","Sales ₹","Orders",
-                "ROAS","ACOS %","Hard Waste ₹","TACOS %"
-            ],
-            "Value":[
-                f"₹ {total_spend:,.2f}",
-                f"₹ {total_sales:,.2f}",
-                total_orders,
-                f"{total_roas:.2f}",
-                f"{total_acos:.2f}%",
-                f"₹ {total_waste:,.2f}",
-                f"{tacos:.2f}%"
-            ]
-        })
+        col1,col2,col3,col4 = st.columns(4)
 
-        st.table(overview)
+        col1.metric("Spend ₹", f"₹ {total_spend:,.2f}")
+        col2.metric("Sales ₹", f"₹ {total_sales:,.2f}")
+        col3.metric("ROAS", f"{total_roas:.2f}")
+        col4.metric("Waste %", f"{waste_percent:.2f}%")
+
+        st.progress(min(total_roas / break_even_roas, 1.0))
 
     # ============================================================
     # KEYWORD INTELLIGENCE
     # ============================================================
 
     with tab2:
-
-        st.dataframe(
-            df[[
-                "search_term","campaign","ad_group","spend",
-                "sales","orders","roas","acos",
-                "cvr","uis","smart_bid","cluster"
-            ]].round(2)
-        )
-
-        st.download_button(
-            "Download Keyword Intelligence",
-            df.to_csv(index=False),
-            "keyword_intelligence.csv"
-        )
+        st.dataframe(df.round(2))
+        st.download_button("Download Keywords", df.to_csv(index=False), "keywords.csv")
 
     # ============================================================
     # NEGATIVE ENGINE
     # ============================================================
 
     with tab3:
-
         negatives = df[df["hard_waste"] > 0]
-
-        st.dataframe(
-            negatives[[
-                "search_term","campaign","ad_group","spend"
-            ]]
-        )
-
+        st.dataframe(negatives)
         negative_bulk = pd.DataFrame({
             "Record Type":"Negative Keyword",
             "Campaign Name":negatives["campaign"],
@@ -190,23 +168,15 @@ if search_file:
             "Match Type":"Negative Exact",
             "Status":"enabled"
         })
-
-        st.download_button(
-            "Download Negative Bulk File",
-            negative_bulk.to_csv(index=False),
-            "negative_bulk.csv"
-        )
+        st.download_button("Download Negatives", negative_bulk.to_csv(index=False), "negatives.csv")
 
     # ============================================================
     # CAMPAIGN BUILDER
     # ============================================================
 
     with tab4:
-
         high = df[df["uis"] > 85]
-
-        st.dataframe(high[["search_term","roas","uis"]])
-
+        st.dataframe(high)
         isolation_bulk = pd.DataFrame({
             "Record Type":"Keyword",
             "Campaign Name":high["search_term"].str[:40]+"_Exact",
@@ -218,52 +188,80 @@ if search_file:
             "Bid":high["smart_bid"].round(2),
             "Status":"enabled"
         })
-
-        st.download_button(
-            "Download Isolation Campaign Bulk",
-            isolation_bulk.to_csv(index=False),
-            "isolation_campaign_bulk.csv"
-        )
+        st.download_button("Download Isolation Campaign", isolation_bulk.to_csv(index=False), "isolation.csv")
 
     # ============================================================
     # PORTFOLIO
     # ============================================================
 
     with tab5:
-
         camp = df.groupby("campaign").agg(
             Spend=("spend","sum"),
-            Sales=("sales","sum"),
-            Orders=("orders","sum")
+            Sales=("sales","sum")
         ).reset_index()
-
         camp["ROAS"] = safe_div(camp["Sales"], camp["Spend"])
-
         st.dataframe(camp.round(2))
 
     # ============================================================
-    # SKU INTELLIGENCE (Requires Purchased Product Report)
+    # PRODUCT INTELLIGENCE
     # ============================================================
 
     with tab6:
+        product_df = df.groupby("campaign").agg(
+            Spend=("spend","sum"),
+            Sales=("sales","sum"),
+            Waste=("hard_waste","sum")
+        ).reset_index()
+        product_df["ROAS"] = safe_div(product_df["Sales"], product_df["Spend"])
+        product_df["Waste %"] = safe_div(product_df["Waste"], product_df["Spend"]) * 100
+        st.dataframe(product_df.round(2))
 
-        if purchased_file:
+    # ============================================================
+    # CLIENT REPORT
+    # ============================================================
 
-            sku_df = pd.read_excel(purchased_file) if purchased_file.name.endswith("xlsx") else pd.read_csv(purchased_file)
+    with tab7:
+        st.subheader("Client Performance Snapshot")
+        st.metric("Total ROAS", f"{total_roas:.2f}")
+        st.metric("TACOS %", f"{tacos:.2f}%")
 
-            sku_df["sku"] = sku_df["Advertised SKU"]
-            sku_df["sales"] = sku_df["7 Day Advertised SKU Sales (₹)"]
-            sku_df["units"] = sku_df["7 Day Advertised SKU Units (#)"]
+    # ============================================================
+    # MONTHLY COMPARISON
+    # ============================================================
 
-            sku_summary = sku_df.groupby("sku").agg(
-                Sales=("sales","sum"),
-                Units=("units","sum")
-            ).reset_index()
+    with tab8:
 
-            st.dataframe(sku_summary.round(2))
+        if previous_file:
+
+            prev = pd.read_excel(previous_file) if previous_file.name.endswith("xlsx") else pd.read_csv(previous_file)
+            prev_spend = prev["Spend"].sum()
+            prev_sales = prev["7 Day Total Sales (₹)"].sum()
+            prev_roas = safe_div(prev_sales, prev_spend)
+
+            curr_spend = total_spend
+            curr_sales = total_sales
+            curr_roas = total_roas
+
+            comparison = pd.DataFrame({
+                "Metric":["Spend","Sales","ROAS"],
+                "Previous":[prev_spend,prev_sales,prev_roas],
+                "Current":[curr_spend,curr_sales,curr_roas],
+                "Change":[
+                    change_indicator(curr_spend,prev_spend),
+                    change_indicator(curr_sales,prev_sales),
+                    change_indicator(curr_roas,prev_roas)
+                ]
+            })
+
+            st.dataframe(comparison)
+
+            st.bar_chart(pd.DataFrame({
+                "Spend":[prev_spend,curr_spend],
+                "Sales":[prev_sales,curr_sales]
+            }, index=["Previous","Current"]))
 
         else:
-            st.info("Upload Purchased Product Report to see SKU Intelligence.")
+            st.info("Upload Previous Month Report for Comparison")
 
 else:
-    st.info("Upload Search Term Report to begin.")
+    st.info("Upload Current Month Report to Start")
