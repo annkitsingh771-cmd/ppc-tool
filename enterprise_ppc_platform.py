@@ -1,6 +1,6 @@
 # ============================================================
-# PPC TOOL LAR – ENTERPRISE MODE
-# Sponsored Products | INR | Full Restored Multi-Tab System
+# PPC TOOL LAR – ENTERPRISE MODE (STABLE POLISHED VERSION)
+# Sponsored Products | INR | Multi Account | Full Tabs
 # ============================================================
 
 import streamlit as st
@@ -65,14 +65,13 @@ if st.session_state.current_account:
 
     mapping = {
         "search_term": find_column(df, ["customer search term","search term"]),
-        "campaign": find_column(df, ["campaign name","campaign"]),
-        "ad_group": find_column(df, ["ad group name","ad group"]),
+        "campaign": find_column(df, ["campaign name"]),
+        "ad_group": find_column(df, ["ad group name"]),
         "spend": find_column(df, ["spend"]),
-        "sales": find_column(df, ["7 day total sales","sales"]),
-        "orders": find_column(df, ["7 day total orders","orders"]),
+        "sales": find_column(df, ["7 day total sales"]),
+        "orders": find_column(df, ["7 day total orders"]),
         "clicks": find_column(df, ["click"]),
         "impressions": find_column(df, ["impression"]),
-        "sku": find_column(df, ["advertised sku","sku"])
     }
 
     for k,v in mapping.items():
@@ -81,7 +80,13 @@ if st.session_state.current_account:
         else:
             df[k] = 0
 
-    df["sku"] = df["sku"].replace(0,"Unknown")
+    # SKU FIX
+    sku_col = find_column(df, ["advertised sku","advertised asin","sku"])
+    if sku_col:
+        df["sku"] = df[sku_col].astype(str)
+    else:
+        df["sku"] = "Unknown"
+
     df.fillna(0, inplace=True)
 
     # ---------------- CORE METRICS ----------------
@@ -92,20 +97,25 @@ if st.session_state.current_account:
     df["roas"] = safe_div(df["sales"], df["spend"])
     df["acos"] = safe_div(df["spend"], df["sales"]) * 100
 
+    df["hard_waste"] = np.where(
+        (df["orders"] == 0) & (df["spend"] > df["cpc"].mean() * 5),
+        df["spend"],
+        0
+    )
+
     # ---------------- PROFIT SETTINGS ----------------
 
     st.sidebar.header("💰 Profit Settings")
     margin = st.sidebar.slider("Margin %", 10, 80, 40)
-    total_revenue = st.sidebar.number_input("Total Revenue (For TACOS)", value=float(df["sales"].sum()))
+    total_revenue = st.sidebar.number_input(
+        "Total Revenue (For TACOS)",
+        value=float(df["sales"].sum())
+    )
 
     break_even_roas = 1 / (margin / 100)
     tacos = safe_div(df["spend"].sum(), total_revenue) * 100
 
-    # ---------------- WASTE ENGINE ----------------
-
-    df["hard_waste"] = np.where((df["orders"] == 0) & (df["spend"] > 100), df["spend"], 0)
-
-    # ---------------- UIS INTELLIGENCE SCORE ----------------
+    # ---------------- UIS SCORE ----------------
 
     avg_roas = df["roas"].mean()
     avg_cvr = df["cvr"].mean()
@@ -142,37 +152,61 @@ if st.session_state.current_account:
     # ---------------- OVERVIEW ----------------
 
     with tab1:
+
+        total_spend = float(df["spend"].sum())
+        total_sales = float(df["sales"].sum())
+        total_orders = int(df["orders"].sum())
+
+        total_roas = safe_div(total_sales, total_spend)
+        total_acos = safe_div(total_spend, total_sales) * 100
+        total_waste = float(df["hard_waste"].sum())
+
         c1,c2,c3,c4,c5,c6 = st.columns(6)
 
-        c1.metric("Spend ₹", f"₹ {df['spend'].sum():,.2f}")
-        c2.metric("Sales ₹", f"₹ {df['sales'].sum():,.2f}")
-        c3.metric("ROAS", round(safe_div(df["sales"].sum(), df["spend"].sum()),2))
-        c4.metric("ACOS %", round(safe_div(df["spend"].sum(), df["sales"].sum())*100,2))
-        c5.metric("Hard Waste ₹", f"₹ {df['hard_waste'].sum():,.2f}")
-        c6.metric("TACOS %", round(tacos,2))
+        c1.metric("Spend ₹", f"₹ {total_spend:,.2f}")
+        c2.metric("Sales ₹", f"₹ {total_sales:,.2f}")
+        c3.metric("Orders", total_orders)
+        c4.metric("ROAS", f"{total_roas:.2f}")
+        c5.metric("ACOS %", f"{total_acos:.2f}%")
+        c6.metric("Hard Waste ₹", f"₹ {total_waste:,.2f}")
+
+        st.metric("TACOS %", f"{tacos:.2f}%")
 
     # ---------------- KEYWORD INTELLIGENCE ----------------
 
     with tab2:
-        st.dataframe(df[[
-            "search_term","campaign","ad_group","spend","sales",
-            "roas","acos","cvr","uis","smart_bid","cluster"
-        ]].round(2))
+
+        st.dataframe(
+            df[[
+                "search_term","campaign","ad_group","spend",
+                "sales","orders","roas","acos","cvr",
+                "uis","smart_bid","cluster"
+            ]].round(2)
+        )
+
+        st.download_button(
+            "Download Full Keyword Intelligence",
+            df.to_csv(index=False),
+            "keyword_intelligence.csv"
+        )
 
     # ---------------- NEGATIVE ENGINE ----------------
 
     with tab3:
+
         negatives = df[df["hard_waste"] > 0]
 
-        st.dataframe(negatives[[
-            "search_term","campaign","ad_group","spend"
-        ]])
+        st.dataframe(
+            negatives[[
+                "search_term","campaign","ad_group","spend"
+            ]]
+        )
 
         negative_bulk = pd.DataFrame({
             "Record Type":"Negative Keyword",
             "Campaign Name":negatives["campaign"],
             "Ad Group Name":negatives["ad_group"],
-            "Keyword or Product Targeting":negatives["search_term"],
+            "Keyword Text":negatives["search_term"],
             "Match Type":"Negative Exact",
             "Status":"enabled"
         })
@@ -186,19 +220,22 @@ if st.session_state.current_account:
     # ---------------- CAMPAIGN BUILDER ----------------
 
     with tab4:
+
         high = df[df["uis"] > 85]
+
+        st.dataframe(high[["search_term","roas","uis"]])
 
         isolation_bulk = pd.DataFrame({
             "Record Type":"Keyword",
             "Campaign Name":high["search_term"].str[:40]+"_Exact",
+            "Campaign Daily Budget":500,
+            "Campaign Start Date":pd.Timestamp.today().strftime("%Y%m%d"),
             "Ad Group Name":high["search_term"].str[:40],
-            "Keyword or Product Targeting":high["search_term"],
+            "Keyword Text":high["search_term"],
             "Match Type":"Exact",
             "Bid":high["smart_bid"].round(2),
             "Status":"enabled"
         })
-
-        st.dataframe(high[["search_term","roas","uis"]])
 
         st.download_button(
             "Download Isolation Campaign Bulk",
@@ -209,9 +246,11 @@ if st.session_state.current_account:
     # ---------------- PORTFOLIO ----------------
 
     with tab5:
+
         camp = df.groupby("campaign").agg(
             Spend=("spend","sum"),
-            Sales=("sales","sum")
+            Sales=("sales","sum"),
+            Orders=("orders","sum")
         ).reset_index()
 
         camp["ROAS"] = safe_div(camp["Sales"], camp["Spend"])
@@ -221,6 +260,7 @@ if st.session_state.current_account:
     # ---------------- SIMULATION + SKU ----------------
 
     with tab6:
+
         add_budget = st.number_input("Add Extra Budget ₹", value=10000)
 
         if add_budget > 0:
@@ -238,7 +278,8 @@ if st.session_state.current_account:
 
         sku_df = df.groupby("sku").agg(
             Spend=("spend","sum"),
-            Sales=("sales","sum")
+            Sales=("sales","sum"),
+            Orders=("orders","sum")
         ).reset_index()
 
         sku_df["ROAS"] = safe_div(sku_df["Sales"], sku_df["Spend"])
