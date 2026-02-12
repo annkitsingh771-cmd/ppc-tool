@@ -1,6 +1,6 @@
 # ============================================================
-# PPC TOOL LAR – ENTERPRISE MODE (STABLE POLISHED VERSION)
-# Sponsored Products | INR | Multi Account | Full Tabs
+# PPC TOOL LAR – ENTERPRISE MODE (STABLE VERSION)
+# SP Search Term + Purchased Product Report
 # ============================================================
 
 import streamlit as st
@@ -11,33 +11,7 @@ st.set_page_config(page_title="PPC TOOL LAR", layout="wide")
 st.title("🚀 PPC TOOL LAR – Enterprise Mode")
 
 # ============================================================
-# SESSION: MULTI ACCOUNT SYSTEM
-# ============================================================
-
-if "accounts" not in st.session_state:
-    st.session_state.accounts = {}
-
-if "current_account" not in st.session_state:
-    st.session_state.current_account = None
-
-st.sidebar.header("🏢 Multi-Account Manager")
-
-acc_name = st.sidebar.text_input("Account Name")
-file_upload = st.sidebar.file_uploader("Upload SP Search Term Report", type=["csv","xlsx"])
-
-if st.sidebar.button("Add Account"):
-    if acc_name and file_upload:
-        df_new = pd.read_excel(file_upload) if file_upload.name.endswith("xlsx") else pd.read_csv(file_upload)
-        st.session_state.accounts[acc_name] = df_new
-        st.session_state.current_account = acc_name
-        st.sidebar.success("Account Added")
-
-if st.session_state.accounts:
-    selected = st.sidebar.selectbox("Select Account", list(st.session_state.accounts.keys()))
-    st.session_state.current_account = selected
-
-# ============================================================
-# HELPER FUNCTIONS
+# HELPER
 # ============================================================
 
 def safe_div(a, b):
@@ -45,51 +19,45 @@ def safe_div(a, b):
         return np.where(b != 0, a / b, 0)
     return a / b if b != 0 else 0
 
-def find_column(df, keywords):
-    for col in df.columns:
-        for key in keywords:
-            if key in col.lower():
-                return col
-    return None
-
 # ============================================================
-# MAIN ENGINE
+# FILE UPLOADS
 # ============================================================
 
-if st.session_state.current_account:
+st.sidebar.header("Upload Reports")
 
-    df = st.session_state.accounts[st.session_state.current_account].copy()
-    df.columns = df.columns.str.lower().str.strip()
+search_file = st.sidebar.file_uploader(
+    "Upload Search Term Report",
+    type=["csv","xlsx"]
+)
 
-    # ---------------- SMART SP COLUMN MAPPING ----------------
+purchased_file = st.sidebar.file_uploader(
+    "Upload Purchased Product Report (For SKU)",
+    type=["csv","xlsx"]
+)
 
-    mapping = {
-        "search_term": find_column(df, ["customer search term","search term"]),
-        "campaign": find_column(df, ["campaign name"]),
-        "ad_group": find_column(df, ["ad group name"]),
-        "spend": find_column(df, ["spend"]),
-        "sales": find_column(df, ["7 day total sales"]),
-        "orders": find_column(df, ["7 day total orders"]),
-        "clicks": find_column(df, ["click"]),
-        "impressions": find_column(df, ["impression"]),
-    }
+if search_file:
 
-    for k,v in mapping.items():
-        if v:
-            df[k] = df[v]
-        else:
-            df[k] = 0
+    # ============================================================
+    # LOAD SEARCH TERM REPORT
+    # ============================================================
 
-    # SKU FIX
-    sku_col = find_column(df, ["advertised sku","advertised asin","sku"])
-    if sku_col:
-        df["sku"] = df[sku_col].astype(str)
-    else:
-        df["sku"] = "Unknown"
+    df = pd.read_excel(search_file) if search_file.name.endswith("xlsx") else pd.read_csv(search_file)
+
+    # Exact mapping based on your real file
+    df["search_term"] = df["Customer Search Term"]
+    df["campaign"] = df["Campaign Name"]
+    df["ad_group"] = df["Ad Group Name"]
+    df["spend"] = df["Spend"]
+    df["sales"] = df["7 Day Total Sales (₹)"]
+    df["orders"] = df["7 Day Total Orders (#)"]
+    df["clicks"] = df["Clicks"]
+    df["impressions"] = df["Impressions"]
 
     df.fillna(0, inplace=True)
 
-    # ---------------- CORE METRICS ----------------
+    # ============================================================
+    # METRICS
+    # ============================================================
 
     df["cpc"] = safe_div(df["spend"], df["clicks"])
     df["ctr"] = safe_div(df["clicks"], df["impressions"]) * 100
@@ -103,9 +71,11 @@ if st.session_state.current_account:
         0
     )
 
-    # ---------------- PROFIT SETTINGS ----------------
+    # ============================================================
+    # PROFIT SETTINGS
+    # ============================================================
 
-    st.sidebar.header("💰 Profit Settings")
+    st.sidebar.header("Profit Settings")
     margin = st.sidebar.slider("Margin %", 10, 80, 40)
     total_revenue = st.sidebar.number_input(
         "Total Revenue (For TACOS)",
@@ -115,7 +85,9 @@ if st.session_state.current_account:
     break_even_roas = 1 / (margin / 100)
     tacos = safe_div(df["spend"].sum(), total_revenue) * 100
 
-    # ---------------- UIS SCORE ----------------
+    # ============================================================
+    # UIS SCORE
+    # ============================================================
 
     avg_roas = df["roas"].mean()
     avg_cvr = df["cvr"].mean()
@@ -125,14 +97,10 @@ if st.session_state.current_account:
         (safe_div(df["cvr"], avg_cvr) * 30)
     ).clip(0,100)
 
-    # ---------------- SMART BID ----------------
-
     df["smart_bid"] = np.where(df["uis"] > 80, df["cpc"] * 1.25,
                         np.where(df["uis"] > 60, df["cpc"] * 1.15,
                         np.where(df["uis"] > 40, df["cpc"],
                         df["cpc"] * 0.85)))
-
-    # ---------------- CLUSTER ----------------
 
     df["cluster"] = df["search_term"].astype(str).apply(lambda x: " ".join(x.split()[:2]))
 
@@ -146,51 +114,63 @@ if st.session_state.current_account:
         "Negative Engine",
         "Campaign Builder",
         "Portfolio",
-        "Simulation + SKU"
+        "SKU Intelligence"
     ])
 
-    # ---------------- OVERVIEW ----------------
+    # ============================================================
+    # OVERVIEW
+    # ============================================================
 
     with tab1:
 
         total_spend = float(df["spend"].sum())
         total_sales = float(df["sales"].sum())
         total_orders = int(df["orders"].sum())
-
         total_roas = safe_div(total_sales, total_spend)
         total_acos = safe_div(total_spend, total_sales) * 100
         total_waste = float(df["hard_waste"].sum())
 
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        overview = pd.DataFrame({
+            "Metric":[
+                "Spend ₹","Sales ₹","Orders",
+                "ROAS","ACOS %","Hard Waste ₹","TACOS %"
+            ],
+            "Value":[
+                f"₹ {total_spend:,.2f}",
+                f"₹ {total_sales:,.2f}",
+                total_orders,
+                f"{total_roas:.2f}",
+                f"{total_acos:.2f}%",
+                f"₹ {total_waste:,.2f}",
+                f"{tacos:.2f}%"
+            ]
+        })
 
-        c1.metric("Spend ₹", f"₹ {total_spend:,.2f}")
-        c2.metric("Sales ₹", f"₹ {total_sales:,.2f}")
-        c3.metric("Orders", total_orders)
-        c4.metric("ROAS", f"{total_roas:.2f}")
-        c5.metric("ACOS %", f"{total_acos:.2f}%")
-        c6.metric("Hard Waste ₹", f"₹ {total_waste:,.2f}")
+        st.table(overview)
 
-        st.metric("TACOS %", f"{tacos:.2f}%")
-
-    # ---------------- KEYWORD INTELLIGENCE ----------------
+    # ============================================================
+    # KEYWORD INTELLIGENCE
+    # ============================================================
 
     with tab2:
 
         st.dataframe(
             df[[
                 "search_term","campaign","ad_group","spend",
-                "sales","orders","roas","acos","cvr",
-                "uis","smart_bid","cluster"
+                "sales","orders","roas","acos",
+                "cvr","uis","smart_bid","cluster"
             ]].round(2)
         )
 
         st.download_button(
-            "Download Full Keyword Intelligence",
+            "Download Keyword Intelligence",
             df.to_csv(index=False),
             "keyword_intelligence.csv"
         )
 
-    # ---------------- NEGATIVE ENGINE ----------------
+    # ============================================================
+    # NEGATIVE ENGINE
+    # ============================================================
 
     with tab3:
 
@@ -217,7 +197,9 @@ if st.session_state.current_account:
             "negative_bulk.csv"
         )
 
-    # ---------------- CAMPAIGN BUILDER ----------------
+    # ============================================================
+    # CAMPAIGN BUILDER
+    # ============================================================
 
     with tab4:
 
@@ -243,7 +225,9 @@ if st.session_state.current_account:
             "isolation_campaign_bulk.csv"
         )
 
-    # ---------------- PORTFOLIO ----------------
+    # ============================================================
+    # PORTFOLIO
+    # ============================================================
 
     with tab5:
 
@@ -257,34 +241,29 @@ if st.session_state.current_account:
 
         st.dataframe(camp.round(2))
 
-    # ---------------- SIMULATION + SKU ----------------
+    # ============================================================
+    # SKU INTELLIGENCE (Requires Purchased Product Report)
+    # ============================================================
 
     with tab6:
 
-        add_budget = st.number_input("Add Extra Budget ₹", value=10000)
+        if purchased_file:
 
-        if add_budget > 0:
-            camp_sim = df.groupby("campaign").agg(
-                Spend=("spend","sum"),
-                UIS=("uis","mean")
+            sku_df = pd.read_excel(purchased_file) if purchased_file.name.endswith("xlsx") else pd.read_csv(purchased_file)
+
+            sku_df["sku"] = sku_df["Advertised SKU"]
+            sku_df["sales"] = sku_df["7 Day Advertised SKU Sales (₹)"]
+            sku_df["units"] = sku_df["7 Day Advertised SKU Units (#)"]
+
+            sku_summary = sku_df.groupby("sku").agg(
+                Sales=("sales","sum"),
+                Units=("units","sum")
             ).reset_index()
 
-            weight = camp_sim["UIS"] / camp_sim["UIS"].sum()
-            camp_sim["Allocated Budget"] = weight * add_budget
+            st.dataframe(sku_summary.round(2))
 
-            st.dataframe(camp_sim.round(2))
-
-        st.subheader("SKU Intelligence")
-
-        sku_df = df.groupby("sku").agg(
-            Spend=("spend","sum"),
-            Sales=("sales","sum"),
-            Orders=("orders","sum")
-        ).reset_index()
-
-        sku_df["ROAS"] = safe_div(sku_df["Sales"], sku_df["Spend"])
-
-        st.dataframe(sku_df.round(2))
+        else:
+            st.info("Upload Purchased Product Report to see SKU Intelligence.")
 
 else:
-    st.info("Add and select an account to start.")
+    st.info("Upload Search Term Report to begin.")
